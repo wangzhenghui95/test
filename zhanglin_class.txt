@@ -1,0 +1,150 @@
+//去云
+// Load a s2 in lanzhou 
+
+function maskS2clouds(image) {
+  var qa = image.select('QA60');
+
+  // Bits 10 and 11 are clouds and cirrus, respectively.
+  var cloudBitMask = ee.Number(2).pow(10).int();
+  var cirrusBitMask = ee.Number(2).pow(11).int();
+
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudBitMask).eq(0).and(
+             qa.bitwiseAnd(cirrusBitMask).eq(0));
+
+  // Return the masked and scaled data.
+  return image.updateMask(mask).divide(10000);
+}
+
+// Map the function over one year of data and take the median.
+var composite = s2.filterDate('2016-01-01', '2016-12-31')
+                  // Pre-filter to get less cloudy granules.
+                  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
+                  .map(maskS2clouds)
+                  .median();
+
+// Display the results.
+Map.setCenter(103.82 ,36.08);
+Map.addLayer(composite, {bands: ['B3', 'B2', 'B1'], min: 0, max: 0.3});
+
+//重采样
+ var image = ee.Image(composite);
+ // Set display and visualization parameters.
+ Map.setCenter(103.83, 36.06193, 15);
+ var visParams = {bands: ['B8', 'B3', 'B2'], max: 0.3};
+
+ // Display the Landsat image using the default nearest neighbor resampling.
+ // when reprojecting to Mercator for the Code Editor map.
+ Map.addLayer(image, visParams, 'original image');
+
+ // Force the next reprojection on this image to use bicubic resampling.
+ var resampled = image.resample('bilinear');//bicubic
+
+ // Display the Landsat image using bicubic resampling.
+ Map.addLayer(resampled, visParams, 'resampled');
+ 
+ //加载验证栅格数据  
+ Map.addLayer(image1);
+ Map.addLayer(image2);
+ 
+ 
+ //分类 
+ // Define a region of interest as a point.  Change the coordinates
+ // to get a classification of any place where there is imagery.
+ var roi = ee.Geometry.Point(103.98 ,36.540117115);
+
+ // Load Landsat 5 input imagery.
+ 
+ 
+ var landsat1 = ee.Image(ee.ImageCollection('COPERNICUS/S2')
+   // Filter to get only one year of images.
+   .filterDate('2016-06-25', '2016-08-30')
+   // Filter to get only images under the region of interest.
+   .filterBounds(roi)
+   // Sort by scene cloudiness, ascending.
+   .sort('CLOUD_COVER')
+   // Get the first (least cloudy) scene.
+   .first());
+ var landsat = landsat1.resample('bilinear');//bicubic  
+
+ var modis = ee.Image(image1)  //////
+     .select('b3');
+
+ // Sample the input imagery to get a FeatureCollection of training data.
+ var training = landsat.addBands(modis).sample({
+   numPixels: 5000,
+   seed: 0
+ });
+
+ // Make a Random Forest classifier and train it.
+ var classifier = ee.Classifier.randomForest(10)
+     .train(training, 'b3');
+
+ // Classify the input imagery.
+ var classified = landsat.classify(classifier);
+
+ // Get a confusion matrix representing resubstitution accuracy.
+ var trainAccuracy = classifier.confusionMatrix();
+ print('Resubstitution error matrix: ', trainAccuracy);
+ print('Training overall accuracy: ', trainAccuracy.accuracy());
+
+ // Sample the input with a different random seed to get validation data.
+ var validation = landsat.addBands(modis).sample({
+   numPixels: 5000,
+   seed: 1
+   // Filter the result to get rid of any null pixels.
+ }).filter(ee.Filter.neq('QA20', null));
+
+ // Classify the validation data.
+ var validated = validation.classify(classifier);
+
+ // Get a confusion matrix representing expected accuracy.
+ var testAccuracy = validated.errorMatrix('b2', 'classification');
+ print('Validation error matrix: ', testAccuracy);
+ print('Validation overall accuracy: ', testAccuracy.accuracy());
+
+ // Define a palette for the IGBP classification.
+ var igbpPalette = [
+   'aec3d4', // water
+   '152106', '225129', '369b47', '30eb5b', '387242', // forest
+   '6a2325', 'c3aa69', 'b76031', 'd9903d', '91af40', // shrub, grass
+   '111149', // wetlands
+   'cdb33b', // croplands
+   'cc0013', // urban
+   '33280d', // crop mosaic
+   'd7cdcc', // snow and ice
+   'f7e084', // barren
+   '6f6f6f' // tundra
+ ];
+
+ // Display the input and the classification.
+ Map.centerObject(roi, 10);
+ Map.addLayer(landsat, {bands: ['B4', 'B3', 'B2'], max: 0.4}, 'COPERNICUS/S2');
+ Map.addLayer(classified, {palette: igbpPalette, min: -336.335, max: 336}, 'classification');//////更改参数 QA20等等  
+ 
+ function maskS2clouds(image) {
+  var qa = image.select('QA20');
+
+  // Bits 10 and 11 are clouds and cirrus, respectively.
+  var cloudBitMask = ee.Number(2).pow(10).int();
+  var cirrusBitMask = ee.Number(2).pow(11).int();
+
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudBitMask).eq(0).and(
+             qa.bitwiseAnd(cirrusBitMask).eq(0));
+
+  // Return the masked and scaled data.
+  return image.updateMask(mask).divide(10000);
+}
+
+// Map the function over one year of data and take the median.
+var composite = s2.filterDate('2016-01-01', '2016-12-31')
+                  // Pre-filter to get less cloudy granules.
+                  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
+                  .map(maskS2clouds)
+                  .median();
+
+// Display the results.
+Map.setCenter(103.98 ,36.540117115);
+Map.addLayer(composite, {bands: ['B3', 'B2', 'B1'], min: 0, max: 0.3});
+
